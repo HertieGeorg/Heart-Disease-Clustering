@@ -1,0 +1,181 @@
+---
+title: 'Clustering - Machine Learning: Heart Disease Dataset - Georg Peter'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r,include=FALSE}
+
+#install.packages("dplyr") 
+#install.packages("dunn.test") 
+#install.packages("cluster") 
+#install.packages("clValid") 
+
+library(dplyr)
+library(tidyverse)
+library(tinytex)
+library(foreign)
+library(ggplot2) 
+library(cluster) # For dunn()
+library(clValid) # For dunn()
+library(stats) # For hierarchical clustering
+ 
+heart_data <- read.csv("heart_disease_patients.csv")
+
+```
+
+
+```{r}
+
+#Exploring Dataset
+head(heart_data)
+
+#Delete "id"-column 
+heart_data <- heart_data %>% select(-id)
+
+#Should the data be scaled? 
+#    summary(heart_data)  #Yes, due to high values of e.g. "chol"
+
+scaled_data <- scale(heart_data)
+
+#    summary(scaled_data)
+
+```
+
+```{r}
+
+# Set the seed so that results are reproducible
+set.seed(10)
+
+# Run the k-means algorithm
+km_cluster1 <- kmeans(scaled_data, centers = 5, nstart= 20)
+
+# If we run a second kmeans model the cluster sizes are almost identical, which shows that we are not just clustering noise
+#    km_cluster2 <- kmeans(scaled_data, centers = 5, nstart= 20)
+# How many patients are in each cluster depending on different runs of kmeans
+#    km_cluster1$size
+#    km_cluster2$size
+#    km_cluster1$tot.withinss/km_cluster1$tot.withinss
+# An identical size of cluster would not be given if nstart is set to 1
+  #   km_cluster3 <- kmeans(scaled_data, centers = 5, nstart= 1)
+  #   km_cluster4 <- kmeans(scaled_data, centers = 5, nstart= 1)
+  #   km_cluster3$size
+  #   km_cluster4$size
+
+# Add cluster assignments to the data
+heart_data <- heart_data %>% mutate(Clusters = as.factor(km_cluster1$cluster))
+
+# Create and print the plot of age and chol for the first clustering algorithm
+plot_one <- ggplot(heart_data, aes(x=age, y = thalach, col = Clusters)) + geom_point()
+plot_one
+
+
+
+```
+```{r}
+
+# Making a scree plot to find the optimal number of clusters 
+# Scree plot: showinh the ratio of the within cluster sum of squares to the total sum of squares
+
+# Set random seed
+set.seed(100)
+
+# Ratio_ss placeholder 
+ratio_ss <- rep(0, 7)
+
+# Creating a for-loop with k = 1 to 10 
+for (k in 1:7) {
+  km_cluster <- kmeans(scaled_data, centers = k, nstart= 20)
+  # Save the ratio between of WSS to TSS in kth element of ratio_ss
+  ratio_ss[k] <- km_cluster$tot.withinss/ km_cluster$totss
+  }
+
+# Scree plot with type "b" and xlab "k"
+plot(ratio_ss, xlab = k,  type = "b")
+
+# K should be choosen such that  clusters are compact and well separated. The ratio_ss keeps decreasing as k increases. Hence, we are looking for a k such that when increasing it, the impact on ratio_ss is not significant, i.e. the elbow in the scree plot (turning point). 
+
+# As there is a significant kink at 3 and the ratio_ss gains are less noteworthy after that, 3 seems to be a good choice 
+
+```
+```{r}
+
+
+km_cluster <- kmeans(scaled_data, centers = 3, nstart= 20)
+heart_data2 <- heart_data %>% mutate(Clusters = as.factor(km_cluster$cluster))
+
+plot_one <- ggplot(heart_data2, aes(x=age, y = thalach, col = Clusters)) + geom_point()
+plot_one
+
+
+```
+
+```{r}
+
+# Hierarchical clustering with single linkage
+hier_clust <- hclust(dist(scaled_data, method = "euclidean" ), method = "single")
+
+#distance measure types: "euclidean", "maximum", "manhattan", "canberra", "binary" or "minkowski" given.
+
+# Dendrogram
+plot(hier_clust, main = "Cluster Dendrogram (Distance = Euclidean)")
+
+```
+```{r}
+
+# Again but with different distance mesuare
+hier_clust_maximum <- hclust(dist(scaled_data, method = "maximum" ), method = "single")
+plot(hier_clust_maximum, main = "Cluster Dendrogram (Distance = Maximum)")
+
+# Cut dendrogram
+cut_single <- cutree(hier_clust, k = 3)
+
+
+```
+
+```{r}
+
+
+# Hierarchical clustering with complete linkage
+hier_clust_complete <- hclust(dist(scaled_data, method = "euclidean" ), method = "complete")
+
+# Dendrogram
+plot(hier_clust_complete, main = "Cluster Dendrogram Complete")
+rect.hclust(hier_clust_complete, k = 3, border = 2:6)
+
+cut_complete <- cutree(hier_clust_complete, 3)
+
+
+```
+```{r}
+
+# Comparing Sinlge and Complete Hierarchical clustering 
+table(cut_single, cut_complete)
+
+```
+
+```{r}
+
+set.seed(100)
+
+# Comparing Dunn's index
+
+#kmeans
+dunn_km <- dunn(clusters = km_cluster$cluster, Data = scaled_data)
+
+#Single-linkage
+dunn_single <- dunn(clusters = cut_single , Data = scaled_data)
+
+#Complete-linkage
+dunn_complete <- dunn(clusters = cut_complete , Data = scaled_data)
+
+print("The single-linkage method returned the highest ratio of minimal intercluster-distance to maximal cluster diameter. (highest Dunn's Index")
+
+# Compare k-means with single-linkage
+table(km_cluster$cluster, cut_single)
+# Compare k-means with complete-linkage
+table(km_cluster$cluster, cut_complete)
+
+```
+
